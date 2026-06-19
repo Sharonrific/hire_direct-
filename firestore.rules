@@ -1,0 +1,73 @@
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: authenticated user
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper: resource belongs to user
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Users: read any, write own
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && isOwner(userId);
+    }
+
+    // Jobs: read any auth'd user, write if client
+    match /jobs/{jobId} {
+      allow read: if isAuth();
+      allow create: if isAuth() &&
+        request.resource.data.clientId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.workerID == request.auth.uid
+      );
+      allow delete: if isAuth() &&
+        resource.data.clientId == request.auth.uid &&
+        resource.data.status == 'Posted';
+    }
+
+    // Bookings: read/write parties involved
+    match /bookings/{bookingId} {
+      allow read, write: if isAuth() && (
+        resource.data.clientId == request.auth.uid ||
+        resource.data.workerId == request.auth.uid
+      );
+      allow create: if isAuth();
+    }
+
+    // Chats: only participants
+    match /chats/{chatId} {
+      allow read, write: if isAuth() &&
+        request.auth.uid in resource.data.participantIds;
+      allow create: if isAuth();
+
+      match /messages/{messageId} {
+        allow read: if isAuth();
+        allow create: if isAuth() &&
+          request.resource.data.senderId == request.auth.uid;
+        allow update: if isAuth(); // For read receipts
+      }
+    }
+
+    // Reviews: read any, write own
+    match /reviews/{reviewId} {
+      allow read: if isAuth();
+      allow create: if isAuth() &&
+        request.resource.data.reviewerId == request.auth.uid;
+      allow update, delete: if false; // Reviews are immutable
+    }
+
+    // Notifications: own only
+    match /notifications/{notifId} {
+      allow read, write: if isAuth() &&
+        resource.data.userId == request.auth.uid;
+    }
+  }
+}
